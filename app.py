@@ -14,7 +14,7 @@ if st.button("Generate Narration"):
     if text.strip():
         # Rewrite
         rewritten = rewrite_text(text, tone)
-        st.subheader("Rewritten Text")
+        st.subheader("Rewritten")
         st.write(rewritten)
 
         # Synthesize Audio
