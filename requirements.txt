@@ -1,0 +1,17 @@
+# Core
+streamlit
+fastapi
+requests
+python-dotenv
+
+# Audio Processing
+pydub
+ffmpeg-python
+
+# IBM Watson SDKs
+ibm-watson
+ibm-watson-machine-learning
+
+# Optional / Helper (for future phases)
+PyMuPDF     # for PDF extraction
+SpeechRecognition  # for voice commands (Phase 3+)
