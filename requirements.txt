@@ -15,3 +15,10 @@ ibm-watson-machine-learning
 # Optional / Helper (for future phases)
 PyMuPDF     # for PDF extraction
 SpeechRecognition  # for voice commands (Phase 3+)
+
+streamlit
+python-dotenv
+requests
+gTTS
+pydub
+huggingface-hub
