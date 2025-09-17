@@ -5,7 +5,7 @@ requests
 python-dotenv
 
 # Audio Processing
-pydub
+
 ffmpeg-python
 
 # IBM Watson SDKs
@@ -19,6 +19,16 @@ SpeechRecognition  # for voice commands (Phase 3+)
 streamlit
 python-dotenv
 requests
-gTTS
+
 pydub
 huggingface-hub
+
+
+# Text-to-speech
+gTTS>=2.5.1
+pydub>=0.25.1
+
+# Optional: if you want Groq's official SDK (not required, we use requests)
+groq>=0.9.0
+
+google-genai>=0.13.0

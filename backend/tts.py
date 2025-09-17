@@ -2,21 +2,26 @@
 import io
 import time
 from typing import List, Optional
+import shutil
 
 from gtts import gTTS
 from pydub import AudioSegment
 
 from .utils import chunk_text_by_chars
 
-
 class TTSException(RuntimeError):
     """Raised for TTS synthesis related errors."""
 
+def _ensure_ffmpeg_available():
+    if not shutil.which("ffmpeg"):
+        raise TTSException(
+            "ffmpeg not found on PATH. Install ffmpeg and ensure it's available in your PATH. "
+            "For example: 'apt install ffmpeg' (Linux) or 'brew install ffmpeg' (macOS) or download from ffmpeg.org for Windows."
+        )
 
 def _synthesize_chunk_to_segment(text_chunk: str, lang: str, tld: str, attempt: int = 1) -> AudioSegment:
     """
-    Synthesize a single chunk to a pydub.AudioSegment.
-    Retries should be handled by the caller if desired.
+    Synthesize a single chunk to a pydub.AudioSegment using gTTS.
     """
     try:
         tts = gTTS(text=text_chunk, lang=lang, tld=tld, slow=False)
@@ -27,7 +32,6 @@ def _synthesize_chunk_to_segment(text_chunk: str, lang: str, tld: str, attempt: 
         return seg
     except Exception as e:
         raise TTSException(f"gTTS failed for chunk (attempt {attempt}): {e}") from e
-
 
 def synthesize_gtts_bytes(
     text: str,
@@ -43,19 +47,9 @@ def synthesize_gtts_bytes(
 
     Raises:
         TTSException on irrecoverable failure.
-
-    Args:
-        text: input text to synthesize.
-        lang: gTTS language code (default 'en').
-        tld: gTTS TLD (e.g., 'com', 'co.uk').
-        max_chunk_chars: maximum characters per chunk (to avoid gTTS/HTTP limits).
-        chunk_retries: how many attempts per chunk before giving up.
-        backoff_base: base seconds for exponential backoff between retries.
-        pause_between_chunks: short sleep between successful chunk requests to reduce rate issues.
-
-    Returns:
-        bytes: MP3 data.
     """
+    _ensure_ffmpeg_available()
+
     if text is None:
         raise TTSException("No text provided for synthesis.")
     text = text.strip()
@@ -81,12 +75,10 @@ def synthesize_gtts_bytes(
                 break
             except Exception as e:
                 last_exc = e
-                # exponential backoff before retrying
                 sleep_for = backoff_base * (2 ** (attempt - 1))
                 time.sleep(sleep_for)
                 continue
         if last_exc is not None:
-            # include chunk index and number of attempts in error
             raise TTSException(f"Failed to synthesize chunk #{idx} after {chunk_retries} attempts: {last_exc}") from last_exc
 
     if not segments:

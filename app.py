@@ -4,20 +4,18 @@ import time
 from dotenv import load_dotenv, find_dotenv
 import streamlit as st
 
-# Load .env explicitly
+# Load env
 env_path = find_dotenv()
 if env_path:
     load_dotenv(env_path)
 else:
     load_dotenv(".env")
 
-print("DEBUG: HF_TOKEN present in environment for Streamlit:", bool(os.getenv("HF_TOKEN")))
-
-# backend modules
+# backend imports
 from backend.rewrite import rewrite_text
 from backend.tts import synthesize_gtts_bytes
 
-# ----- Helper UI renderer (centralized) -----
+# UI helpers
 def render_latest_ui(latest, dl_key_suffix="latest"):
     st.markdown("---")
     st.header("Original vs Rewritten (Latest)")
@@ -59,46 +57,11 @@ def render_latest_ui(latest, dl_key_suffix="latest"):
         st.info("Audio not generated for the latest narration.")
 
 
-# ----- Basic config -----
-st.set_page_config(page_title="EchoVerse", layout="wide", initial_sidebar_state="auto")
-
-# Optional: load background image (base64)
-def set_background_from_base64(path="assets/bg_base64.txt"):
-    try:
-        if os.path.exists(path):
-            with open(path, "r", encoding="utf-8") as f:
-                b64 = f.read().strip()
-            style = f"""
-            <style>
-            .stApp {{
-                background-image: url("data:image/png;base64,{b64}");
-                background-size: cover;
-                background-repeat: no-repeat;
-                background-attachment: fixed;
-            }}
-            .transparent-box {{
-                background: rgba(255,255,255,0.18);
-                border-radius: 12px;
-                padding: 12px;
-                box-shadow: 0 6px 18px rgba(0,0,0,0.08);
-            }}
-            </style>
-            """
-            st.markdown(style, unsafe_allow_html=True)
-    except Exception:
-        pass
-
-set_background_from_base64()
-
-# Initialize session state
-if "past_narrations" not in st.session_state:
-    st.session_state["past_narrations"] = []
-
-# UI header
+# Page header
 col1, col2, col3 = st.columns([1, 2, 1])
 with col2:
     st.markdown("<h1 style='text-align:center;'>🎧 <b>EchoVerse</b></h1>", unsafe_allow_html=True)
-    st.markdown("<p style='text-align:center; color: #333;'>Convert text into expressive audiobooks using Falcon + gTTS</p>", unsafe_allow_html=True)
+    st.markdown("<p style='text-align:center; color: #333;'>Convert text into expressive audiobooks using Gemini + gTTS</p>", unsafe_allow_html=True)
 
 # Main layout
 with st.container():
@@ -108,14 +71,13 @@ with st.container():
         uploaded_file = st.file_uploader(
             "Drag and drop a .txt file or browse",
             type=["txt"],
-            help="Limit: moderate sized files; long inputs will be chunked.",
+            help="Moderate sized files are fine; long inputs will be chunked.",
         )
         pasted_text = st.text_area("Or paste your text here", height=220, key="paste_input")
     with right:
         st.markdown("### Settings")
         tone = st.selectbox("Select Tone", ["Neutral", "Suspenseful", "Inspiring"], key="tone_select")
         voice_label = st.selectbox("Select Voice (approximate)", ["Lisa", "Michael", "Allison", "Kate"], key="voice_select")
-        # voice -> gTTS mapping (lang, tld)
         VOICE_MAP = {
             "Lisa": ("en", "co.uk"),
             "Michael": ("en", "com"),
@@ -137,18 +99,24 @@ if uploaded_file is not None:
 else:
     input_text = pasted_text
 
+# Initialize session state
+if "past_narrations" not in st.session_state:
+    st.session_state["past_narrations"] = []
+
+MAX_HISTORY = int(os.getenv("ECHOVERSE_MAX_HISTORY", "6"))
+
 # Handle generation
 if generate_btn:
     if not input_text or not input_text.strip():
         st.error("Please paste or upload some text before generating.")
     else:
-        # 1) Rewrite with HF
-        with st.spinner("Rewriting text with Falcon..."):
-            rewritten, hf_failed, hf_diags = rewrite_text(input_text, tone=tone)
-        if hf_failed:
-            st.warning("Hugging Face rewrite failed; using original text as fallback for synthesis. See console for diagnostics.")
-            print("HF diagnostics:", hf_diags)
-            # fallback: keep rewritten as original (rewrite_text already does this)
+        # 1) Rewrite with Gemini inside rewrite_text()
+        with st.spinner("Rewriting text (inference)..."):
+            rewritten, infer_failed, diags = rewrite_text(input_text, tone=tone)
+
+        if infer_failed:
+            st.warning("Inference failed on all chunks; using original text for TTS. See diagnostics in console.")
+            print("Inference diagnostics:", diags)
         else:
             st.success("Text rewritten.")
 
@@ -156,7 +124,6 @@ if generate_btn:
         audio_bytes = None
         with st.spinner("Synthesizing audio with gTTS..."):
             try:
-                # If your backend raises RuntimeError on failure, we'll catch it here
                 audio_bytes = synthesize_gtts_bytes(rewritten, lang=lang, tld=tld)
                 if audio_bytes:
                     st.success("Audio synthesized.")
@@ -171,7 +138,7 @@ if generate_btn:
                 print("Unexpected synthesize_gtts_bytes error:", repr(e))
                 audio_bytes = None
 
-        # 3) Save entry to session state
+        # 3) Save entry to session state (trim history)
         entry = {
             "original": input_text,
             "rewritten": rewritten,
@@ -179,16 +146,17 @@ if generate_btn:
             "voice": voice_label,
             "audio_bytes": audio_bytes,
             "timestamp": time.time(),
-            "hf_failed": hf_failed,
-            "hf_diags": hf_diags,
+            "infer_failed": infer_failed,
+            "diags": diags,
         }
         st.session_state.past_narrations.insert(0, entry)
+        st.session_state.past_narrations = st.session_state.past_narrations[:MAX_HISTORY]
 
-        # 4) Render latest using centralized helper (prevents duplication)
+        # 4) Render latest
         latest = st.session_state.past_narrations[0]
         render_latest_ui(latest, dl_key_suffix="latest")
 
-# Show latest (only when not the immediate generate run)
+# Show latest when not generating
 if st.session_state.past_narrations and not generate_btn:
     render_latest_ui(st.session_state.past_narrations[0], dl_key_suffix="latest_view")
 
@@ -219,7 +187,6 @@ else:
             else:
                 st.info("Audio not available for this entry.")
 
-            # show the original and rewritten text  areas in expander with unique keys
             st.text_area(
                 "Original text (past)",
                 item.get("original", ""),
