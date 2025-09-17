@@ -219,7 +219,7 @@ else:
             else:
                 st.info("Audio not available for this entry.")
 
-            # show the original and rewritten text areas in expander with unique keys
+            # show the original and rewritten text  areas in expander with unique keys
             st.text_area(
                 "Original text (past)",
                 item.get("original", ""),
